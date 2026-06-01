@@ -22,7 +22,7 @@ spec:
       containers:
         - name: mcp-kettlelogic
           # Immutable version tag (not :latest). CI re-pins to the digest.
-          image: ghcr.io/mploschiavo/mcp-kettlelogic:1.0.0
+          image: ghcr.io/mploschiavo/mcp-kettlelogic:1.0.1
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:

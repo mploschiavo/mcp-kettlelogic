@@ -6,7 +6,7 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
-    image: ghcr.io/mploschiavo/mcp-kettlelogic:1.0.0
+    image: ghcr.io/mploschiavo/mcp-kettlelogic:1.0.1
     environment:
       KETTLELOGIC_BASE_URL: https://kettlelogic.com
       KETTLELOGIC_TRANSPORT: streamable-http

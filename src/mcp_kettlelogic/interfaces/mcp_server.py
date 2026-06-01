@@ -31,7 +31,16 @@ class McpContentServer:
         self._industries = industries
         self._serializer = serializer
         self._observer = observer
-        self._mcp = FastMCP(constants.SERVER_NAME, host=config.http_host, port=config.http_port)
+        # stateless_http + json_response keep each HTTP request self-contained, so
+        # the server scales horizontally (multiple replicas, no session affinity)
+        # behind an ingress. Ignored by the stdio transport.
+        self._mcp = FastMCP(
+            constants.SERVER_NAME,
+            host=config.http_host,
+            port=config.http_port,
+            stateless_http=True,
+            json_response=True,
+        )
         self._register()
 
     @property
