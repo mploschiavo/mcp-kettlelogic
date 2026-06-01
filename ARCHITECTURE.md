@@ -2,9 +2,36 @@
 
 `mcp-kettlelogic` is a thin, stateless MCP server that turns a public Kettle Logic
 website into an agent-consumable surface. It owns no data — every answer is derived
-from a live fetch of the configured site.
+from a live fetch of the configured site — and it is organised as a small
+**hexagonal (ports & adapters)** application so each concern is isolated and tested
+in isolation.
 
-## Three layers
+## Layers
+
+```
+src/mcp_kettlelogic/
+├── constants.py          # all literals (no magic numbers/strings in logic)
+├── config.py             # ← the only reader of the environment
+├── domain/               # enums, frozen value objects, errors (no I/O)
+│   ├── enums.py          #   TransportKind, CacheOutcome
+│   ├── models.py         #   ArticleSummary, ArticleContent, Industry, …
+│   └── errors.py         #   FetchError, NotFoundError, UnknownIndustryError, …
+├── infrastructure/       # adapters to the outside world
+│   ├── http_client.py    #   ← the only place that touches the network (httpx)
+│   ├── html_parsing.py   #   stdlib HTMLParser extractors + text normalizer
+│   ├── cache.py          #   TtlCache
+│   └── observability.py  #   logging, metrics registry/renderer, /metrics server
+├── application/          # use cases
+│   ├── article_service.py
+│   ├── industry_service.py
+│   └── catalog_support.py
+├── interfaces/           # delivery + serialization
+│   ├── serializer.py     #   ← the only place with JSON field names
+│   └── mcp_server.py     #   FastMCP tools/resources (handlers are methods)
+└── cli/main.py           # composition root (ServerApplication)
+```
+
+## Three-layer view
 
 ```mermaid
 flowchart TB
@@ -13,78 +40,75 @@ flowchart TB
     end
     subgraph mcp["mcp-kettlelogic · governed surface"]
       direction TB
-      F["FastMCP (stdio)"]
-      K["KettleLogicContent client<br/>(httpx + stdlib HTML parsing)"]
-      O["observability:<br/>stderr logs · /metrics"]
-      F --> K
-      F -.-> O
-      K -.-> O
+      I["interfaces: McpContentServer + ContentSerializer"]
+      A["application: ArticleService / IndustryService"]
+      F["infrastructure: SiteHttpClient · HtmlParser · TtlCache · observability"]
+      I --> A --> F
     end
     subgraph site["Your systems · the live site"]
       S["kettlelogic.com<br/>/insights/ · /industries/ · /llms.txt"]
     end
-    C <-->|"MCP over stdio<br/>(JSON-RPC)"| F
-    K <-->|"HTTPS GET (read-only)"| S
+    C <-->|"MCP (stdio or streamable-http)"| I
+    F <-->|"HTTPS GET (read-only)"| S
 ```
 
-- **Agent layer** — any MCP-compliant client. It speaks MCP; it doesn't know or care
-  how the content is sourced.
-- **MCP layer (this repo)** — the single governed surface for tools, resources and
-  prompts. Stateless, read-only, no credentials.
-- **Site layer** — the public website, selected by `KETTLELOGIC_BASE_URL`.
-
-## Request flow
+## Request flow (search_articles)
 
 ```mermaid
 sequenceDiagram
-    participant A as Agent (MCP client)
-    participant M as FastMCP
-    participant K as KettleLogicContent
-    participant S as Live site
+    participant Cl as MCP client
+    participant Srv as McpContentServer
+    participant Svc as ArticleService
+    participant Http as SiteHttpClient
+    participant Site as Live site
 
-    A->>M: tools/call search_articles{query:"retail"}
-    M->>K: search_articles(query, limit)
-    K->>K: cache lookup ("articles")
+    Cl->>Srv: tools/call search_articles{query}
+    Srv->>Svc: search(query, limit)
+    Svc->>Svc: TtlCache lookup
     alt cache miss
-        K->>S: GET /insights/  (discover slugs)
-        S-->>K: HTML index
-        par fan-out (bounded, ≤8 concurrent)
-            K->>S: GET /insights/<slug>/  (title + description)
-            S-->>K: HTML
+        Svc->>Http: GET /insights/  (discover slugs)
+        Http->>Site: HTTPS
+        par bounded fan-out (≤ concurrency)
+            Svc->>Http: GET /insights/<slug>/  (title + description)
+            Http->>Site: HTTPS
         end
-        K->>K: cache store (TTL 600s)
     end
-    K-->>M: filtered results (JSON)
-    M-->>A: tools/call result
+    Svc-->>Srv: SearchResults (domain objects)
+    Srv->>Srv: ContentSerializer → JSON
+    Srv-->>Cl: result
 ```
-
-`get_industry_overview` and the `kettlelogic://articles/{slug}` resource follow the
-same shape: fetch the page, extract readable text with the stdlib `HTMLParser`
-(dropping `<script>`/`<style>`/`<nav>`/`<header>`/`<footer>`), return clean prose.
 
 ## Design decisions
 
-- **Live, not bundled.** Content is fetched on demand so the server never drifts from
-  the site. A short in-memory TTL cache (default 600s) keeps a burst of tool calls in
-  one agent turn from re-crawling.
-- **Configurable target.** `KETTLELOGIC_BASE_URL` makes the server a generic reader —
-  point it at your own site. Industry discovery prefers the cross-site
-  [`llms.txt`](https://llmstxt.org/) convention, falling back to crawling `/industries/`.
-- **Standard library parsing.** No scraping framework; `html.parser.HTMLParser`
-  subclasses extract links and readable text. Fewer dependencies, no brittle regex.
-- **Official MCP SDK over stdio.** Correct, interoperable transport (newline-delimited
-  JSON-RPC) — works with Claude Desktop and IDE clients out of the box.
-- **Stateless & safe.** Read-only HTTP, no auth, no writes, bounded concurrency, and a
-  cap on how many article pages it will fan out to (`MAX_ARTICLES`).
-- **Observability built in.** All logs go to stderr (stdout is reserved for the MCP
-  protocol); operations and fetches emit counters and latency summaries, optionally
-  exposed as Prometheus metrics.
+- **Live, not bundled** — content is fetched on demand; a short-TTL in-memory cache
+  keeps a burst of tool calls in one agent turn from re-crawling.
+- **Configurable target** — `KETTLELOGIC_BASE_URL` makes it a generic reader;
+  industry discovery prefers the cross-site `llms.txt` convention.
+- **Standard-library parsing** — `html.parser.HTMLParser` subclasses; no scraping
+  framework, no regex over markup.
+- **Errors stay in the domain** — the HTTP client translates `httpx` exceptions into
+  `FetchError` / `NotFoundError`, so application/interface code never imports httpx.
+- **Two transports** — stdio for local clients, streamable-http for Kubernetes.
+- **Observability built in** — stderr logging + optional Prometheus `/metrics`.
+
+## Ratchets
+
+`tests/ratchets/` are static-analysis tests that scan `src/` and assert **zero**
+violations (held at clean, not a burn-down baseline). They run in `pytest` and CI:
+
+| Ratchet | Enforces |
+|---------|----------|
+| `test_class_structure_ratchets` | No module-level functions; no god classes (method/line ceilings). |
+| `test_python_quality_ratchets` | No broad/bare `except`; every def fully typed; no `type: ignore` / `print`. |
+| `test_layering_ratchets` | Env reads only in `config.py`; `httpx` only in `http_client.py`; JSON only in `serializer.py`. |
+| `test_infra_hygiene_ratchets` | Dockerfile non-root + healthcheck + pinned base; k8s probes, resource bounds, replicas ≥ 2, no hostPath, ClusterIP; `.dockerignore` + `CODEOWNERS`. |
+| `test_tests_quality_ratchets` | No skipped tests; every test asserts; all dependencies pinned. |
 
 ## Failure modes
 
 | Condition | Behavior |
 |-----------|----------|
-| An article page fails to load | That article still appears in the manifest with a slug-derived title (degraded, not dropped). |
-| Site has no `/llms.txt` | Industries are discovered by crawling `/industries/` instead. |
-| Unknown industry slug (404) | Tool returns a clear `Unknown industry` error. |
-| Site unreachable | Tool/resource returns an error; the server stays up for the next call. |
+| An article page fails to load | Still listed in the manifest with a slug-derived title (degraded, not dropped). |
+| Site has no `/llms.txt` | Industries discovered by crawling `/industries/`. |
+| Unknown industry slug (404) | Tool returns a clear `UnknownIndustryError`. |
+| Site unreachable | Tool/resource errors; the server stays up for the next call. |

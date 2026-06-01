@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mcp-kettlelogic-config
+  labels:
+    app.kubernetes.io/name: mcp-kettlelogic
+data:
+  # Non-secret runtime config. The target site is public; there are no secrets.
+  KETTLELOGIC_BASE_URL: "https://kettlelogic.com"
+  KETTLELOGIC_TRANSPORT: "streamable-http"
+  KETTLELOGIC_HTTP_HOST: "0.0.0.0"
+  KETTLELOGIC_HTTP_PORT: "8080"
+  KETTLELOGIC_METRICS_PORT: "9464"
+  KETTLELOGIC_LOG_LEVEL: "INFO"

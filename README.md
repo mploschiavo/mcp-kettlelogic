@@ -11,7 +11,13 @@ can point it at your own deployment — or any site with the same shape — and 
 it discovers.
 
 Built on the official [`mcp`](https://pypi.org/project/mcp/) Python SDK (FastMCP),
-speaking the standard **stdio** transport.
+speaking the standard **stdio** transport (and an optional **streamable-http**
+transport for container/Kubernetes deployment).
+
+> Engineering note: this repository doubles as a reference for how we build —
+> hexagonal layering, fully-typed OO, dependency injection, and a suite of
+> **ratchets** (see [ARCHITECTURE.md](./ARCHITECTURE.md)) that enforce the rules
+> in CI. `pytest` runs unit tests, real-stdio e2e tests, and the ratchets together.
 
 ---
 
@@ -26,47 +32,29 @@ speaking the standard **stdio** transport.
 ### Resources
 | URI | Description |
 |-----|-------------|
-| `kettlelogic://articles/manifest` | JSON catalog of every insight article (slug, title, description, url). |
+| `kettlelogic://articles/manifest` | JSON catalog of every insight article. |
 | `kettlelogic://industries/list` | JSON list of industry pages discovered on the site. |
 | `kettlelogic://articles/{slug}` | A single article rendered as readable text. |
 
-Discovery is live: articles come from the site's `/insights/` index, and industries
-from its [`/llms.txt`](https://llmstxt.org/) (falling back to crawling `/industries/`).
+Discovery is live: articles from the site's `/insights/` index, industries from its
+[`/llms.txt`](https://llmstxt.org/) (falling back to crawling `/industries/`).
 
 ---
 
-## Install
+## Install & run
 
 ```bash
-pip install .            # or: pip install -r requirements.txt
+pip install .            # Python >= 3.11; pulls in mcp + httpx
+mcp-kettlelogic          # console script (stdio transport by default)
 ```
 
-Requires Python ≥ 3.10. Dependencies: `mcp`, `httpx` (both pulled in automatically).
-
-## Run
-
-```bash
-mcp-kettlelogic          # console script (installed by `pip install .`)
-# or
-python server.py
-```
-
-The server talks MCP over stdio, so it's normally launched **by an MCP client**, not
-by hand. To smoke-test it interactively, use the MCP Inspector:
+Normally an MCP client launches it. To explore interactively:
 
 ```bash
 npx @modelcontextprotocol/inspector mcp-kettlelogic
 ```
 
-## Configure
-
-| Env var | Default | Purpose |
-|---------|---------|---------|
-| `KETTLELOGIC_BASE_URL` | `https://kettlelogic.com` | Target site to read. Point it at your own site. |
-| `KETTLELOGIC_LOG_LEVEL` | `INFO` | Log verbosity (`DEBUG`/`INFO`/`WARNING`/…). Logs go to **stderr**. |
-| `KETTLELOGIC_METRICS_PORT` | _(unset)_ | If set, serve Prometheus metrics at `http://<host>:<port>/metrics`. |
-
-## Use it in an MCP client
+### Use it in an MCP client
 
 ```json
 {
@@ -79,84 +67,52 @@ npx @modelcontextprotocol/inspector mcp-kettlelogic
 }
 ```
 
-Or, without installing, point at the script directly:
+## Configure
 
-```json
-{
-  "mcpServers": {
-    "kettlelogic": {
-      "command": "python",
-      "args": ["server.py"]
-    }
-  }
-}
-```
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `KETTLELOGIC_BASE_URL` | `https://kettlelogic.com` | Target site to read. Point it at your own. |
+| `KETTLELOGIC_TRANSPORT` | `stdio` | `stdio` (local clients) or `streamable-http` (network/k8s). |
+| `KETTLELOGIC_HTTP_HOST` / `KETTLELOGIC_HTTP_PORT` | `0.0.0.0` / `8080` | Bind for the http transport. |
+| `KETTLELOGIC_METRICS_PORT` | _(unset)_ | If set, serve Prometheus metrics at `/metrics`. |
+| `KETTLELOGIC_LOG_LEVEL` | `INFO` | Log level. Logs go to **stderr** (stdout is the MCP channel). |
+| `KETTLELOGIC_CACHE_TTL_SECONDS` / `KETTLELOGIC_MAX_ARTICLES` / `KETTLELOGIC_FETCH_CONCURRENCY` / `KETTLELOGIC_OVERVIEW_MAX_CHARS` | see `constants.py` | Tuning. |
 
-## Run in Docker
+## Containers & Kubernetes
+
+For network deployment the server runs the **streamable-http** transport.
 
 ```bash
-docker build -t kettlelogic-mcp:latest .
-docker run --rm -i kettlelogic-mcp:latest      # -i: stdio is interactive
+docker compose -f deploy/docker/docker-compose.yaml up --build
 ```
 
-```json
-{
-  "mcpServers": {
-    "kettlelogic": {
-      "command": "docker",
-      "args": ["run", "--rm", "-i",
-               "-e", "KETTLELOGIC_BASE_URL=https://kettlelogic.com",
-               "kettlelogic-mcp:latest"]
-    }
-  }
-}
-```
+Kubernetes manifests live in [`deploy/k8s/`](./deploy/k8s/) (Deployment with 2
+replicas, readiness/liveness probes, resource bounds, non-root + read-only root FS,
+ClusterIP Service, ConfigMap). Apply with:
 
----
+```bash
+kubectl apply -k deploy/k8s
+```
 
 ## Observability
 
-**Logging** — structured logs to **stderr** (never stdout, which is the MCP channel):
-operation start/finish with durations, fetch results, cache hits/misses, and errors.
-Control with `KETTLELOGIC_LOG_LEVEL`.
-
-**Metrics** — when `KETTLELOGIC_METRICS_PORT` is set, the server exposes
-Prometheus-format metrics at `/metrics`:
-
-| Metric | Type | Labels |
-|--------|------|--------|
-| `mcp_operations_total` | counter | `op` |
-| `mcp_errors_total` | counter | `op`, `error` |
-| `mcp_http_fetches_total` | counter | — |
-| `mcp_http_errors_total` | counter | `error` |
-| `mcp_cache_total` | counter | `result` (hit/miss), `key` |
-| `mcp_op_duration_seconds` | summary | `op` |
-
-```bash
-KETTLELOGIC_METRICS_PORT=9464 mcp-kettlelogic &
-curl localhost:9464/metrics
-```
-
----
+- **Logging** — structured logs to **stderr**: operation start/finish + durations,
+  fetch results, cache hits/misses, errors. Set `KETTLELOGIC_LOG_LEVEL`.
+- **Metrics** — Prometheus `/metrics` (set `KETTLELOGIC_METRICS_PORT`):
+  `mcp_operations_total`, `mcp_errors_total`, `mcp_http_fetches_total`,
+  `mcp_http_errors_total`, `mcp_cache_total{result}`, `mcp_op_duration_seconds`.
 
 ## Develop & test
 
 ```bash
 pip install -e ".[dev]"
-pytest                       # unit + e2e, with coverage gate (fail-under 90%)
+ruff check src tests        # lint + import order
+mypy                        # type check (disallow-untyped-defs)
+pytest                      # unit + e2e + ratchets, coverage gate (fail-under 90%)
 ```
 
-- `test_server.py` — unit tests against an injected `httpx.MockTransport` (no network):
-  parsers, tools, resources, caching, metrics, and error paths.
-- `test_e2e.py` — launches the **real server over real MCP stdio** (via the official
-  SDK client) against a local HTTP fixture site, exercising the full handshake →
-  tools/resources → fetch → parse path.
-
-Coverage runs ~99%.
-
-## How it works
-
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for diagrams and design notes.
+Coverage runs ~99%. See [ARCHITECTURE.md](./ARCHITECTURE.md) for layering, the
+request flow, and the full list of ratchets.
 
 ## License
 

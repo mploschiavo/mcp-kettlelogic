@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-kettlelogic
+  labels:
+    app.kubernetes.io/name: mcp-kettlelogic
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: mcp-kettlelogic
+  ports:
+    - name: mcp
+      port: 8080
+      targetPort: mcp
+    - name: metrics
+      port: 9464
+      targetPort: metrics
