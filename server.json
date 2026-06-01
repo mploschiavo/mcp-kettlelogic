@@ -1,0 +1,17 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.json",
+  "name": "io.github.mploschiavo/mcp-kettlelogic",
+  "description": "MCP server exposing Kettle Logic's insight articles and industry guidance as discoverable resources and callable tools (search_articles, get_industry_overview, list_articles, list_industries, get_article). Runs over stdio or streamable-HTTP; a hosted instance is live.",
+  "version": "1.1.0",
+  "repository": {
+    "url": "https://github.com/mploschiavo/mcp-kettlelogic",
+    "source": "github"
+  },
+  "websiteUrl": "https://kettlelogic.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://kettlelogic.com/mcp"
+    }
+  ]
+}

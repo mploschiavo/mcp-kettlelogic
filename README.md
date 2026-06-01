@@ -28,6 +28,9 @@ transport for container/Kubernetes deployment).
 |------|-------------|
 | `search_articles(query, limit=5)` | Search insight articles by title / slug / description. |
 | `get_industry_overview(industry)` | Plain-text overview extracted from an industry page. |
+| `list_articles()` | JSON catalog of every insight article (title, slug, description). |
+| `list_industries()` | JSON list of industries with guidance (name + slug). |
+| `get_article(slug)` | A single insight article rendered as readable text. |
 
 ### Resources
 | URI | Description |
@@ -65,6 +68,31 @@ npx @modelcontextprotocol/inspector mcp-kettlelogic
     }
   }
 }
+```
+
+### Or connect to the hosted server (no install)
+
+A hardened instance runs live over streamable-HTTP — point any MCP client at it:
+
+```json
+{
+  "mcpServers": {
+    "kettlelogic": { "url": "https://kettlelogic.com/mcp" }
+  }
+}
+```
+
+### MCP registry
+
+[`server.json`](server.json) is the [MCP registry](https://github.com/modelcontextprotocol/registry)
+manifest (advertises the hosted streamable-HTTP remote). To publish/update the
+listing once (requires GitHub auth to claim the `io.github.mploschiavo/*` namespace):
+
+```bash
+# https://github.com/modelcontextprotocol/registry — one-time install
+mcp-publisher login github
+mcp-publisher validate    # checks server.json against the registry schema
+mcp-publisher publish
 ```
 
 ## Configure
