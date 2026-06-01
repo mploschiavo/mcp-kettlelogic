@@ -7,6 +7,7 @@ to **stderr** — stdout is reserved for the MCP stdio protocol.
 
 from __future__ import annotations
 
+import bisect
 import logging
 import sys
 import threading
@@ -27,6 +28,10 @@ METRIC_HTTP_FETCHES: Final = "mcp_http_fetches_total"
 METRIC_HTTP_ERRORS: Final = "mcp_http_errors_total"
 METRIC_CACHE: Final = "mcp_cache_total"
 METRIC_DURATION: Final = "mcp_op_duration_seconds"
+
+# Histogram bucket upper bounds (seconds) for mcp_op_duration_seconds. Tuned for
+# the sub-second tool calls this server makes; lets Grafana compute real p50/p95/p99.
+DURATION_BUCKETS: Final = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
 
 _MILLISECONDS_PER_SECOND: Final = 1000.0
 
@@ -53,6 +58,8 @@ class MetricsRegistry:
         self._counters: dict[_LabelKey, int] = {}
         self._latency_count: dict[str, int] = {}
         self._latency_sum: dict[str, float] = {}
+        # Per-operation histogram bucket counts (len(DURATION_BUCKETS) + 1 for +Inf).
+        self._latency_buckets: dict[str, list[int]] = {}
 
     def increment(self, name: str, labels: Mapping[str, str] | None = None) -> None:
         key = self._key(name, labels or {})
@@ -63,6 +70,9 @@ class MetricsRegistry:
         with self._lock:
             self._latency_count[operation] = self._latency_count.get(operation, 0) + 1
             self._latency_sum[operation] = self._latency_sum.get(operation, 0.0) + seconds
+            buckets = self._latency_buckets.setdefault(operation, [0] * (len(DURATION_BUCKETS) + 1))
+            # First bound >= seconds; past all bounds falls into the +Inf bucket.
+            buckets[bisect.bisect_left(DURATION_BUCKETS, seconds)] += 1
 
     def counters(self) -> dict[_LabelKey, int]:
         with self._lock:
@@ -71,9 +81,12 @@ class MetricsRegistry:
     def latencies(self) -> dict[str, tuple[int, float]]:
         with self._lock:
             return {
-                op: (self._latency_count[op], self._latency_sum[op])
-                for op in self._latency_count
+                op: (self._latency_count[op], self._latency_sum[op]) for op in self._latency_count
             }
+
+    def latency_buckets(self) -> dict[str, list[int]]:
+        with self._lock:
+            return {op: list(counts) for op, counts in self._latency_buckets.items()}
 
     @staticmethod
     def _key(name: str, labels: Mapping[str, str]) -> _LabelKey:
@@ -86,7 +99,7 @@ class PrometheusRenderer:
     def render(self, registry: MetricsRegistry) -> str:
         lines: list[str] = []
         lines.extend(self._render_counters(registry.counters()))
-        lines.extend(self._render_latencies(registry.latencies()))
+        lines.extend(self._render_latencies(registry.latencies(), registry.latency_buckets()))
         return "\n".join(lines) + "\n"
 
     def _render_counters(self, counters: Mapping[_LabelKey, int]) -> list[str]:
@@ -100,13 +113,26 @@ class PrometheusRenderer:
                 out.append(self._format_sample(name, labels, value))
         return out
 
-    def _render_latencies(self, latencies: Mapping[str, tuple[int, float]]) -> list[str]:
+    def _render_latencies(
+        self,
+        latencies: Mapping[str, tuple[int, float]],
+        buckets_by_op: Mapping[str, list[int]],
+    ) -> list[str]:
         out: list[str] = []
         for operation in sorted(latencies):
             count, total = latencies[operation]
-            out.append(f"# TYPE {METRIC_DURATION} summary")
-            out.append(f'{METRIC_DURATION}_count{{op="{operation}"}} {count}')
+            counts = buckets_by_op.get(operation, [0] * (len(DURATION_BUCKETS) + 1))
+            out.append(f"# TYPE {METRIC_DURATION} histogram")
+            cumulative = 0
+            for bound, in_bucket in zip(DURATION_BUCKETS, counts, strict=False):
+                cumulative += in_bucket
+                out.append(
+                    f'{METRIC_DURATION}_bucket{{op="{operation}",le="{bound}"}} {cumulative}'
+                )
+            cumulative += counts[len(DURATION_BUCKETS)]  # +Inf overflow
+            out.append(f'{METRIC_DURATION}_bucket{{op="{operation}",le="+Inf"}} {cumulative}')
             out.append(f'{METRIC_DURATION}_sum{{op="{operation}"}} {total:.6f}')
+            out.append(f'{METRIC_DURATION}_count{{op="{operation}"}} {count}')
         return out
 
     @staticmethod

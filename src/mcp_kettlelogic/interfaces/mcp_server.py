@@ -53,6 +53,9 @@ class McpContentServer:
     def _register(self) -> None:
         self._mcp.tool(name=constants.TOOL_SEARCH_ARTICLES)(self.search_articles)
         self._mcp.tool(name=constants.TOOL_GET_INDUSTRY_OVERVIEW)(self.get_industry_overview)
+        self._mcp.tool(name=constants.TOOL_LIST_ARTICLES)(self.list_articles)
+        self._mcp.tool(name=constants.TOOL_LIST_INDUSTRIES)(self.list_industries)
+        self._mcp.tool(name=constants.TOOL_GET_ARTICLE)(self.get_article)
         self._mcp.resource(constants.ARTICLES_MANIFEST_URI)(self.articles_manifest)
         self._mcp.resource(constants.INDUSTRIES_LIST_URI)(self.industries_list)
         self._mcp.resource(constants.ARTICLE_RESOURCE_URI_TEMPLATE)(self.article_resource)
@@ -65,9 +68,7 @@ class McpContentServer:
     async def get_industry_overview(self, industry: str) -> str:
         """Return a plain-text overview for an industry page (slug, e.g. "retail")."""
         async with self._observer.observe(constants.TOOL_GET_INDUSTRY_OVERVIEW):
-            return self._serializer.industry_overview(
-                await self._industries.get_overview(industry)
-            )
+            return self._serializer.industry_overview(await self._industries.get_overview(industry))
 
     async def articles_manifest(self) -> str:
         """JSON catalog of every insight article on the configured site."""
@@ -82,4 +83,19 @@ class McpContentServer:
     async def article_resource(self, slug: str) -> str:
         """A single insight article rendered as readable text."""
         async with self._observer.observe("article_resource"):
+            return self._serializer.article_text(await self._articles.get_content(slug))
+
+    async def list_articles(self) -> str:
+        """List every Kettle Logic insight article (title, slug, description) as JSON."""
+        async with self._observer.observe(constants.TOOL_LIST_ARTICLES):
+            return self._serializer.articles_manifest(await self._articles.list_summaries())
+
+    async def list_industries(self) -> str:
+        """List the industries Kettle Logic publishes guidance for (name + slug) as JSON."""
+        async with self._observer.observe(constants.TOOL_LIST_INDUSTRIES):
+            return self._serializer.industries_list(await self._industries.list_industries())
+
+    async def get_article(self, slug: str) -> str:
+        """Fetch one insight article as readable text (slug, e.g. "control-tower-operations")."""
+        async with self._observer.observe(constants.TOOL_GET_ARTICLE):
             return self._serializer.article_text(await self._articles.get_content(slug))

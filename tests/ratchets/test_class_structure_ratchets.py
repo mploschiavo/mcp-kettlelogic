@@ -37,7 +37,6 @@ def test_no_god_classes() -> None:
             span = (node.end_lineno or node.lineno) - node.lineno
             if len(methods) > _MAX_METHODS_PER_CLASS or span > _MAX_LINES_PER_CLASS:
                 offenders.append(
-                    f"{_TREE.rel(path)}::{node.name} "
-                    f"(methods={len(methods)}, lines={span})"
+                    f"{_TREE.rel(path)}::{node.name} " f"(methods={len(methods)}, lines={span})"
                 )
     assert offenders == [], f"god classes detected: {offenders}"

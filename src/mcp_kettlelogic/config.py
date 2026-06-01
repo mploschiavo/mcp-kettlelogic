@@ -73,9 +73,7 @@ class ConfigLoader:
                 ENV_HTTP_TIMEOUT, constants.DEFAULT_HTTP_TIMEOUT_SECONDS
             ),
             max_articles=self._int(ENV_MAX_ARTICLES, constants.DEFAULT_MAX_ARTICLES),
-            fetch_concurrency=self._int(
-                ENV_FETCH_CONCURRENCY, constants.DEFAULT_FETCH_CONCURRENCY
-            ),
+            fetch_concurrency=self._int(ENV_FETCH_CONCURRENCY, constants.DEFAULT_FETCH_CONCURRENCY),
             overview_max_chars=self._int(
                 ENV_OVERVIEW_MAX_CHARS, constants.DEFAULT_OVERVIEW_MAX_CHARS
             ),

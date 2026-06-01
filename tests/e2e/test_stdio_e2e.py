@@ -82,7 +82,13 @@ async def _session(base_url: str) -> AsyncIterator[ClientSession]:
 async def test_e2e_lists_tools_and_resources(site: str) -> None:
     async with _session(site) as session:
         tools = {tool.name for tool in (await session.list_tools()).tools}
-        assert {"search_articles", "get_industry_overview"} <= tools
+        assert {
+            "search_articles",
+            "get_industry_overview",
+            "list_articles",
+            "list_industries",
+            "get_article",
+        } <= tools
         resources = {str(r.uri) for r in (await session.list_resources()).resources}
         assert "kettlelogic://articles/manifest" in resources
 

@@ -14,7 +14,9 @@ from mcp_kettlelogic.domain.models import (
 from mcp_kettlelogic.interfaces.serializer import ContentSerializer
 
 _SER = ContentSerializer()
-_SUMMARY = ArticleSummary(slug="retail", title="Retail", description="desc", url="https://x/retail/")
+_SUMMARY = ArticleSummary(
+    slug="retail", title="Retail", description="desc", url="https://x/retail/"
+)
 
 
 def test_articles_manifest() -> None:

@@ -33,8 +33,8 @@ def test_parse_document_extracts_clean_content() -> None:
     assert doc.title.strip().startswith("Retail Omnichannel Revenue")
     assert doc.description == "Executive strategy."
     assert "Omnichannel revenue architecture" in doc.text
-    assert "var x" not in doc.text       # script removed
-    assert "menu junk" not in doc.text   # nav removed
+    assert "var x" not in doc.text  # script removed
+    assert "menu junk" not in doc.text  # nav removed
     assert "footer junk" not in doc.text  # footer removed
 
 

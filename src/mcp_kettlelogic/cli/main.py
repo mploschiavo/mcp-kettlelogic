@@ -45,9 +45,7 @@ class ServerApplication:
     @classmethod
     def from_config(cls, config: ServerConfig) -> ServerApplication:
         observer = cls._build_observer(config)
-        http_client = SiteHttpClient.create(
-            config.base_url, config.http_timeout_seconds, observer
-        )
+        http_client = SiteHttpClient.create(config.base_url, config.http_timeout_seconds, observer)
         parser = HtmlParser()
         normalizer = TextNormalizer()
         slug_reader = SectionSlugReader(parser)

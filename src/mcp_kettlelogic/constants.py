@@ -34,6 +34,9 @@ INDUSTRIES_LIST_URI: Final = "kettlelogic://industries/list"
 ARTICLE_RESOURCE_URI_TEMPLATE: Final = "kettlelogic://articles/{slug}"
 TOOL_SEARCH_ARTICLES: Final = "search_articles"
 TOOL_GET_INDUSTRY_OVERVIEW: Final = "get_industry_overview"
+TOOL_LIST_ARTICLES: Final = "list_articles"
+TOOL_LIST_INDUSTRIES: Final = "list_industries"
+TOOL_GET_ARTICLE: Final = "get_article"
 
 # -- tunable defaults (overridable via config) ------------------------------ #
 DEFAULT_CACHE_TTL_SECONDS: Final = 600.0
@@ -69,14 +72,27 @@ SKIP_TEXT_TAGS: Final[frozenset[str]] = frozenset(
     {"script", "style", "noscript", "template", "svg", "head"}
 )
 # Structural wrappers dropped entirely so extracted prose reads cleanly.
-SKIP_REGION_TAGS: Final[frozenset[str]] = frozenset(
-    {"nav", "header", "footer", "aside", "form"}
-)
+SKIP_REGION_TAGS: Final[frozenset[str]] = frozenset({"nav", "header", "footer", "aside", "form"})
 # Tags that introduce a line break in extracted text.
 BLOCK_TAGS: Final[frozenset[str]] = frozenset(
     {
-        "p", "div", "section", "article", "li", "ul", "ol", "br", "tr",
-        "h1", "h2", "h3", "h4", "h5", "h6", "figure", "blockquote",
+        "p",
+        "div",
+        "section",
+        "article",
+        "li",
+        "ul",
+        "ol",
+        "br",
+        "tr",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "figure",
+        "blockquote",
     }
 )
 ANCHOR_TAG: Final = "a"

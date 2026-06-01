@@ -26,6 +26,11 @@ def test_registry_and_renderer_roundtrip() -> None:
     assert "plain_counter 1" in out
     assert 'mcp_op_duration_seconds_count{op="x"} 1' in out
     assert "# TYPE" in out
+    # histogram: a 0.05s observation lands at le="0.05" and cumulates to +Inf
+    assert f"# TYPE {observability.METRIC_DURATION} histogram" in out
+    assert 'mcp_op_duration_seconds_bucket{op="x",le="0.005"} 0' in out
+    assert 'mcp_op_duration_seconds_bucket{op="x",le="0.05"} 1' in out
+    assert 'mcp_op_duration_seconds_bucket{op="x",le="+Inf"} 1' in out
 
 
 def test_logger_factory_is_idempotent() -> None:
