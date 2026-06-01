@@ -85,14 +85,18 @@ A hardened instance runs live over streamable-HTTP — point any MCP client at i
 ### MCP registry
 
 [`server.json`](server.json) is the [MCP registry](https://github.com/modelcontextprotocol/registry)
-manifest (advertises the hosted streamable-HTTP remote). To publish/update the
-listing once (requires GitHub auth to claim the `io.github.mploschiavo/*` namespace):
+manifest (advertises the hosted streamable-HTTP remote). It validates against the
+`2025-12-11` schema. Publishing claims the `io.github.mploschiavo/*` namespace, so it
+requires an interactive GitHub login **as that user**:
 
 ```bash
-# https://github.com/modelcontextprotocol/registry — one-time install
-mcp-publisher login github
-mcp-publisher validate    # checks server.json against the registry schema
-mcp-publisher publish
+# 1. Get the CLI (prebuilt binary from the registry releases)
+curl -L https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz | tar xz mcp-publisher
+
+# 2. From the repo root (where server.json lives):
+./mcp-publisher validate          # already passes
+./mcp-publisher login github      # opens a browser / device code — auth as mploschiavo
+./mcp-publisher publish
 ```
 
 ## Configure
