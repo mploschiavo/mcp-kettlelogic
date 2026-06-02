@@ -14,3 +14,7 @@ dist/
 coverage.xml
 htmlcov/
 .secrets/
+
+# downloaded MCP registry CLI binary (not source)
+mcp-publisher
+mcp-publisher_*.tar.gz
