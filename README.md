@@ -82,22 +82,61 @@ A hardened instance runs live over streamable-HTTP — point any MCP client at i
 }
 ```
 
-### MCP registry
+## Publishing to the MCP registry
 
-[`server.json`](server.json) is the [MCP registry](https://github.com/modelcontextprotocol/registry)
-manifest (advertises the hosted streamable-HTTP remote). It validates against the
-`2025-12-11` schema. Publishing claims the `io.github.mploschiavo/*` namespace, so it
-requires an interactive GitHub login **as that user**:
+This server is listed in the public [MCP registry](https://registry.modelcontextprotocol.io)
+as **`com.kettlelogic/mcp-kettlelogic`** (brand: *kettlelogic*, not a personal GitHub
+handle). [`server.json`](server.json) is the manifest — it advertises the hosted
+streamable-HTTP remote and validates against the `2025-12-11` schema.
+
+The listing is claimed by **HTTP domain ownership**, not a GitHub login: the registry
+fetches `https://kettlelogic.com/.well-known/mcp-registry-auth` (a public-key challenge
+served by the marketing site — `web/public/.well-known/mcp-registry-auth` in the
+`kettlelogic` repo) and verifies a signature made with our Ed25519 **private** key.
+
+### Automated (preferred)
+
+[`.github/workflows/publish-registry.yml`](.github/workflows/publish-registry.yml)
+**publishes automatically on every GitHub Release** (and via manual *Run workflow*).
+It aligns `server.json`'s `version` with the release tag, validates, then
+`login http` + `publish` using the `MCP_REGISTRY_KEY` repo secret.
+
+So the normal flow is just: **bump `version.py` + `server.json` `version`, then cut a
+GitHub Release** — the registry updates itself.
+
+**One-time secret setup** (the CI's signing key — run locally, never prints the key):
+
+```bash
+gh secret set MCP_REGISTRY_KEY --repo mploschiavo/mcp-kettlelogic \
+  --body "$(openssl pkey -in .secrets/mcp-registry-key.pem -outform DER | tail -c 32 | xxd -p -c 64)"
+```
+
+### Manual
+
+If you ever need to publish by hand:
 
 ```bash
 # 1. Get the CLI (prebuilt binary from the registry releases)
 curl -L https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz | tar xz mcp-publisher
 
 # 2. From the repo root (where server.json lives):
-./mcp-publisher validate          # already passes
-./mcp-publisher login github      # opens a browser / device code — auth as mploschiavo
+./mcp-publisher validate
+./mcp-publisher login http --domain kettlelogic.com \
+  --private-key "$(openssl pkey -in .secrets/mcp-registry-key.pem -outform DER | tail -c 32 | xxd -p -c 64)"
 ./mcp-publisher publish
 ```
+
+### Keys & rotation
+
+- The Ed25519 **private key** lives at `.secrets/mcp-registry-key.pem` (gitignored) and
+  is the publish credential for the `com.kettlelogic` namespace — keep it in a password
+  manager. The matching **public** key is committed only as the served challenge file.
+- **Rotate:** generate a new key (`openssl genpkey -algorithm Ed25519 -out
+  .secrets/mcp-registry-key.pem`), regenerate the challenge file
+  (`echo "v=MCPv1; k=ed25519; p=$(openssl pkey -in .secrets/mcp-registry-key.pem -pubout -outform DER | tail -c 32 | base64)" > ../kettlelogic/web/public/.well-known/mcp-registry-auth`),
+  redeploy the site, update the `MCP_REGISTRY_KEY` secret, then re-publish.
+- **Versions are immutable** in the registry — you can't re-publish an existing version;
+  bump it first.
 
 ## Configure
 
