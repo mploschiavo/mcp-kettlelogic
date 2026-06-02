@@ -126,17 +126,42 @@ curl -L https://github.com/modelcontextprotocol/registry/releases/latest/downloa
 ./mcp-publisher publish
 ```
 
-### Keys & rotation
+### Keys & recovery & rotation
 
-- The Ed25519 **private key** lives at `.secrets/mcp-registry-key.pem` (gitignored) and
-  is the publish credential for the `com.kettlelogic` namespace — keep it in a password
-  manager. The matching **public** key is committed only as the served challenge file.
-- **Rotate:** generate a new key (`openssl genpkey -algorithm Ed25519 -out
-  .secrets/mcp-registry-key.pem`), regenerate the challenge file
-  (`echo "v=MCPv1; k=ed25519; p=$(openssl pkey -in .secrets/mcp-registry-key.pem -pubout -outform DER | tail -c 32 | base64)" > ../kettlelogic/web/public/.well-known/mcp-registry-auth`),
-  redeploy the site, update the `MCP_REGISTRY_KEY` secret, then re-publish.
-- **Versions are immutable** in the registry — you can't re-publish an existing version;
-  bump it first.
+The Ed25519 key authorizes publishing under the `com.kettlelogic` namespace. It
+exists in **three places** (the private key is intentionally NOT in git):
+
+1. **Local** — `.secrets/mcp-registry-key.pem` (gitignored). Convenience for manual publishes.
+2. **Cluster** — Secret `mcp-registry-key` (key `key-hex`) in the `github-runner`
+   namespace. This is what the auto-publish runner uses, and the **canonical backup**.
+3. **Public half** — served at `https://kettlelogic.com/.well-known/mcp-registry-auth`
+   (committed in the kettlelogic repo as `web/public/.well-known/mcp-registry-auth`).
+
+**Lost the local `.pem`?** Recover the signing key (as hex) straight from the cluster —
+publishing only needs the hex, not the pem file:
+
+```bash
+KEY_HEX="$(kubectl -n github-runner get secret mcp-registry-key -o jsonpath='{.data.key-hex}' | base64 -d)"
+./mcp-publisher login http --domain kettlelogic.com --private-key "$KEY_HEX"
+./mcp-publisher publish
+```
+
+**Rotate** (if the key is ever exposed):
+
+```bash
+openssl genpkey -algorithm Ed25519 -out .secrets/mcp-registry-key.pem   # new key
+PUB="$(openssl pkey -in .secrets/mcp-registry-key.pem -pubout -outform DER | tail -c 32 | base64)"
+# 1. update the served challenge (in the kettlelogic repo) + redeploy the site:
+echo "v=MCPv1; k=ed25519; p=$PUB" > ../kettlelogic/web/public/.well-known/mcp-registry-auth
+# 2. update the cluster Secret the runner uses:
+kubectl -n github-runner delete secret mcp-registry-key
+kubectl -n github-runner create secret generic mcp-registry-key \
+  --from-literal=key-hex="$(openssl pkey -in .secrets/mcp-registry-key.pem -outform DER | tail -c 32 | xxd -p -c 64)"
+# 3. re-publish (new key must be live at the well-known URL first).
+```
+
+**Versions are immutable** in the registry — you can't re-publish an existing version;
+bump `version.py` + `server.json` first.
 
 ## Configure
 
