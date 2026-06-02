@@ -94,22 +94,22 @@ fetches `https://kettlelogic.com/.well-known/mcp-registry-auth` (a public-key ch
 served by the marketing site — `web/public/.well-known/mcp-registry-auth` in the
 `kettlelogic` repo) and verifies a signature made with our Ed25519 **private** key.
 
-### Automated (preferred)
+### Automated (on a self-hosted runner)
 
 [`.github/workflows/publish-registry.yml`](.github/workflows/publish-registry.yml)
 **publishes automatically on every GitHub Release** (and via manual *Run workflow*).
-It aligns `server.json`'s `version` with the release tag, validates, then
-`login http` + `publish` using the `MCP_REGISTRY_KEY` repo secret.
+It runs on a **self-hosted runner in our cluster** (`runs-on: [self-hosted, linux,
+cluster]`) — chosen because GitHub-hosted minutes run out fast, and this way the
+publish costs zero quota and won't fail when the month is drained. That runner also
+mounts the signing key from an in-cluster Secret (`/opt/mcp/key-hex`), so the key
+never lives in GitHub Actions secrets.
 
-So the normal flow is just: **bump `version.py` + `server.json` `version`, then cut a
-GitHub Release** — the registry updates itself.
+So the normal flow is: **bump `version.py` + `server.json` `version` → cut a GitHub
+Release** → the registry updates itself.
 
-**One-time secret setup** (the CI's signing key — run locally, never prints the key):
-
-```bash
-gh secret set MCP_REGISTRY_KEY --repo mploschiavo/mcp-kettlelogic \
-  --body "$(openssl pkey -in .secrets/mcp-registry-key.pem -outform DER | tail -c 32 | xxd -p -c 64)"
-```
+Runner setup is one-time and lives in the private home repo:
+`deployments/github-runner/` (README there). **If the runner is down**, re-run from
+the Actions tab, or use the local fallback below — it always works with no infra.
 
 ### Manual
 
